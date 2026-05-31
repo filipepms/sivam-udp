@@ -1,0 +1,13 @@
+# Bloqueia absolutamente tudo (pastas e arquivos)
+*
+
+# Abre uma exceção para não bloquear as subpastas (permitindo que o Git procure dentro delas)
+!*/
+
+# Abre uma exceção para não bloquear nenhum arquivo com extensão .py
+!*.py
+
+# Permite enviar o próprio arquivo .gitignore (opcional, mas recomendado)
+!.gitignore
+# Permite enviar o arquivo README.md (opcional, mas recomendado)
+!README.md
