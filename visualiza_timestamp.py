@@ -6,7 +6,7 @@ import numpy as np
 
 
 def find_latest_timestamp_file(base_dir: Path) -> Path:
-    candidates = sorted(base_dir.rglob("timestamp_*.npy"), key=lambda p: p.stat().st_mtime)
+    candidates = sorted(base_dir.rglob("*timestamp_file_*.npy"), key=lambda p: p.stat().st_mtime)
     if not candidates:
         raise FileNotFoundError(f"Nenhum arquivo timestamp_*.npy encontrado em {base_dir}")
     return candidates[-1]
@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base-dir",
         type=str,
-        default="recordings",
+        default="recordings/debug",
         help="Diretorio base para buscar timestamp_*.npy quando --file nao e informado.",
     )
     return parser.parse_args()
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     else:
         target = find_latest_timestamp_file(Path(args.base_dir).expanduser().resolve())
 
-    target = "recordings/debug/timestamp_102.npy"
+    target = "recordings/debug/teste-45hz_timestamp_33.npy"
     print(f"Abrindo: {target}")
     visualize_timestamp(target)
     #mostrar_valores(target)

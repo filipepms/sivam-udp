@@ -504,7 +504,7 @@ def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init
     except:
         f = os.listdir(save_dir)
         for s in f:
-            if 'rec' in s:
+            if nome_paciente in s:
                 file_cnt += 1
 
     b.put([sensor_number, rate, header_text, parallelize, save_folder, file_cnt, sim_len, fake_real_time,fake_data_len,]) # ready to start running
@@ -649,7 +649,7 @@ def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init
                         b.put([pressed])
                         q.put([cur_time, Qi])
                         #button_mode(button, 0) # turn button off
-                        np.save(save_dir+'raw_imu_'+str(file_cnt)+'.npy', sensor_mat[:t,:]) # saving kinematics
+                        np.save(save_dir+nome_paciente+'_raw_imu_'+str(file_cnt)+'.npy', sensor_mat[:t,:]) # saving kinematics
                         file_cnt += 1
                         pressed = False
                         #stop_vicon.direction = digitalio.Direction.OUTPUT
