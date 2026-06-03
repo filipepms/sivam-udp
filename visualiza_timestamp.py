@@ -93,7 +93,7 @@ if __name__ == "__main__":
     else:
         target = find_latest_timestamp_file(Path(args.base_dir).expanduser().resolve())
 
-    target = "recordings/debug/teste-45hz_timestamp_33.npy"
+    target = "recordings/debug/segunda-45hz-recalibra_timestamp_48.npy"
     print(f"Abrindo: {target}")
     visualize_timestamp(target)
     #mostrar_valores(target)

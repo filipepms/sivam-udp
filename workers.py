@@ -1,3 +1,5 @@
+import threading
+
 import helper as h
 import time
 import sys
@@ -11,7 +13,7 @@ import smbus2
 from flask import Flask, jsonify,request,render_template,send_from_directory
 from threading import Thread
 from helper import quat2sto_single, sto2quat
-
+import signal 
 #import socket
 #def send_command_to_nexus(xml_command: str, host='10.4.10.74', port=801):
 #    """Send an XML command to Nexus Remote Control server."""
@@ -213,8 +215,54 @@ def press_button():
         }), 400
 
 def pegaNome():
-    return
+    return nome_paciente
 
+@app.route('/recalibrate', methods=['POST'])
+def recalibrate():
+    """Endpoint para recalibrar os sensores"""
+    #local para reiniciar o script (o service)
+
+    print("Iniciando recalibração dos sensores...")
+    return jsonify({'message': 'Recalibração iniciada com sucesso!','status': 'success'})
+
+
+def puxar_tomada():
+    """Espera 1 segundo e envia um sinal de encerramento para o processo pai"""
+    time.sleep(1)
+    print("Sinalizando encerramento do processo pai para o systemd reiniciar...")
+    
+    # os.getppid() pega o PID do processo principal (pai)
+    # signal.SIGTERM pede para ele ser encerrado imediatamente
+    os.kill(os.getppid(), signal.SIGKILL)
+
+@app.route('/desligar_sivam', methods=['POST'])
+def desligar_sivam():
+    """Endpoint para desligar o sistema""" 
+    #desliga completamente o RPI, cuidado ao usar essa função, ela irá desligar o RPI e será necessário ligar manualmente novamente
+    print("Desligando o sistema...")
+    response = jsonify({
+        'desliga': 'OK',
+        'timestamp': time.time()
+    }), 200
+    threading.Thread(target=desliga).start()
+    #os.system("sudo shutdown -h now")
+    return response
+ 
+def desliga():
+    time.sleep(1)  # Espera um pouco para garantir que a resposta seja enviada antes de desligar
+    """Função para desligar o sistema, pode ser chamada de dentro do código para desligar o RPI"""
+    print("Desligando o sistema...")
+    os.system("sudo shutdown -h now")
+
+
+@app.route('/reiniciasistema', methods=['GET'])
+def reinicia_sistema(): 
+    """Endpoint para reiniciar o sistema"""
+    #time.sleep(1)
+    #os._exit(1)  # Isso irá encerrar o processo atual, e se estiver rodando como um serviço, ele deve reiniciar automaticamente
+    threading.Thread(target=puxar_tomada).start()
+
+    return jsonify({'message': 'Sistema reiniciado com sucesso!','status': 'success'})
 
 @app.route('/button/status', methods=['GET'])
 def button_status():
@@ -252,7 +300,46 @@ def parallelIK(ikSolver, s0, ik, time_stamp):
     ik.put([time.time()-time_stamp])
     time.sleep(0.005)
 
-def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init, home_dir, calibration_q=None):
+def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init, home_dir, calibration_q=None, recalibration=None):
+    """
+    Read IMU sensor data from multiple TCA9548A multiplexed I2C channels and process quaternion estimates.
+    This function initializes IMU sensors, handles sensor calibration, reads acceleration and gyroscope data,
+    computes quaternion orientations using Mahony filter, and manages web-based control for recording sessions.
+    Parameters
+    ----------
+    q : queue.Queue
+        Queue for sending timestamp, quaternion data, and head error to main process
+    b : queue.Queue
+        Queue for receiving control signals and sending initialization/control information
+    fake_online_data : str
+        Base path for loading fake/offline IMU data files
+    init_time : float
+        Initialization time in seconds for sensor calibration data collection
+    signals_per_sensor : int
+        Number of signals per sensor (typically 6: 3 accel + 3 gyro)
+    save_dir_init : str
+        Root directory path for saving recorded IMU data
+    home_dir : str
+        Home directory path for storing calibration data
+    calibration_q : queue.Queue, optional
+        Queue for sending calibration completion signals (default: None)
+    recalibration : queue.Queue, optional
+        Queue for receiving recalibration trigger signals (default: None)
+    Returns
+    -------
+    None
+        Function runs continuously in a separate process, communicating via queues
+    Notes
+    -----
+    - Reads sensor configuration from 'settings.txt' file (body parts, TCA indices, sampling rate, etc.)
+    - Supports ISM330DHCX, LSM6DS33, and LSM6DS032 IMU sensors
+    - Implements gyroscope bias calibration and stores offsets in calibration directory
+    - Uses web server interface (default port 5000) for remote recording control
+    - Supports both real-time and offline (fake data) data collection modes
+    - Applies sensor-specific rotation transformations before quaternion computation
+    - Saves raw IMU data as numpy arrays to disk during recording sessions
+    - Handles graceful sensor I/O errors with continue logic in main loop
+    """
     global web_button_enabled
     
     # Load the initialization information about the sensors
@@ -470,7 +557,7 @@ def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init
 
     # load fake data and figure out number of sensors
     quat_cal_offset = int(init_time*rate) # array for data for calibrating sensors
-    cwd = os.getcwd() #
+    #cwd = os.getcwd() #
     sensor_vec = np.zeros(num_sensors*signals_per_sensor)
     scaling = np.ones(num_sensors*signals_per_sensor)
     offsets = np.zeros(num_sensors*signals_per_sensor)
@@ -595,7 +682,8 @@ def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init
 
                                     calibration_q.put([time.time(), Qi, head_err, "calibrated"])  # Envia uma mensagem para o processo principal indicando que a calibração foi concluída
 
-                                    #q.put([time.time(), Qi, head_err]) # sending initialized info with calibrate signal
+                                    #
+                                    # q.put([time.time(), Qi, head_err,"recalibra"]) # sending initialized info with calibrate signal
                                     # Espera um pouco para garantir que o modelo tenha tempo de processar a calibração antes de enviar os dados normais
                                     time.sleep(1.0)
                                     print("Sinal de calibração enviado, continuando com a execução normal...")
@@ -627,9 +715,7 @@ def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init
             sensor_mat = np.zeros((int(sim_len*rate),num_sensors*signals_per_sensor))
             start = q.get() # waiting for confirmation of sim Starting
             time.sleep(0.3)
-            #button_mode(button, 2) # make button solid red to start recording
-            #clear_button(button)
- 
+           
             while(True): # Pull data at the desired rate
                 cur_time = time.time()
                 if cur_time >= time_start + dt: # time for next reading
@@ -659,8 +745,24 @@ def readIMU(q, b, fake_online_data, init_time, signals_per_sensor, save_dir_init
                         break
                     time_start = cur_time
                     try:
-                            
-                        
+                        if recalibration is not None and not recalibration.empty():
+                            recalib_signal = recalibration.get()
+                            if recalib_signal == "recalibrate":
+                                print("Sinal de recalibração recebido, iniciando processo de recalibração...")
+                                cal_dir = home_dir + 'calibration'
+                                gyro_file = '/gyro_offsets.npy'
+                                
+                                # Executar calibração dos sensores
+                                calibrating_sensors(cal_dir, gyro_file, cal_dir, rate, sensor_list)
+                                
+                                # Carregar os novos offsets calibrados
+                                offsets = np.load(cal_dir + gyro_file)
+                                
+                                # Enviar sinal de recalibração concluída para o modelo
+                                if calibration_q is not None:
+                                    calibration_q.put([time.time(), Qi, head_err, "recalibrated"])
+                                
+                                print("Recalibração concluída e sinal enviado para o modelo.")
                         for j, s in enumerate(sensor_list):
                           #  print(f"Reading sensor {j} de nome {sensor_label_list[j]} at time {cur_time:.2f}s")
                            # if(sensor_label_list[j]=='calcn_l_imu'  ):
