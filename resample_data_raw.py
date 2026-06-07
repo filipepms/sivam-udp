@@ -91,7 +91,8 @@ def build_rotation_matrices(num_sensors: int) -> np.ndarray:
     
     # Mapeamento de rotação baseado na posição do sensor
     # 0: hip/torso/head, 1: left side, 2: right side, 3: foot
-    rot_type = [0, 0, 1, 1, 3, 2, 2, 3, 1, 1, 1, 2, 2, 2]  # Padrão padrão
+    # Ordem esperada: pelvis, femur_l, tibia_l, calcn_l, femur_r, tibia_r, calcn_r
+    rot_type = [0, 1, 1, 3, 2, 2, 3]
     
     rot_mats = np.zeros((num_sensors, 3, 3))
     for i in range(num_sensors):
@@ -213,7 +214,8 @@ def generate_quaternions_from_imu(
     
     # Inicializar quaternions
     quaternions = np.zeros((num_samples, num_sensors, 4))
-    quaternions[:, :, 0] = 1.0  # w = 1, x,y,z = 0 (quaternion neutro)
+    # Usar mesmo quaternion inicial do pipeline principal (helper.py)
+    quaternions[:, :, :] = np.array([0.7071, 0.7071, 0.0, 0.0])
     
     # Inicializar filtros Mahony para cada sensor
     madgwick_filters = [ahrs.filters.Mahony(frequency=rate) for _ in range(num_sensors)]
@@ -397,11 +399,9 @@ def main():
     
     # Gerar rótulos de sensores
     sensor_labels_full = [
-        'pelvis_imu', 'torso_imu',
+        'pelvis_imu',
         'femur_l_imu', 'tibia_l_imu', 'calcn_l_imu',
-        'femur_r_imu', 'tibia_r_imu', 'calcn_r_imu',
-        'humerus_l_imu', 'ulna_l_imu', 'hand_l_imu',
-        'humerus_r_imu', 'ulna_r_imu', 'hand_r_imu'
+        'femur_r_imu', 'tibia_r_imu', 'calcn_r_imu'
     ]
     sensor_labels = sensor_labels_full[:num_sensors]
     
@@ -425,7 +425,7 @@ def main():
         output_file = Path(args.output).expanduser().resolve()
     else:
         output_file = raw_imu_file.with_name(
-            raw_imu_file.stem.replace('_raw_imu_', '_quat_') + f"_resampled_{target_rate:.2f}Hz.sto"
+            raw_imu_file.stem.replace('_raw_imu_', '_quat_') + f"_resampled_{int(target_rate)}Hz.sto"
         )
     
     print(f"\nSalvando arquivo .sto: {output_file}")
